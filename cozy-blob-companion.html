@@ -1795,6 +1795,16 @@
             <span class="info-label">Books Read:</span>
             <span class="info-value" id="booksRead">0</span>
         </div>
+        <div class="info-row">
+            <span class="info-label">Contentment:</span>
+            <div class="stat-bar-container" style="flex: 1; height: 20px;">
+                <div class="stat-bar-fill love" id="contentmentBar" style="width: 50%;" data-percent="50%"></div>
+            </div>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Reading Effect:</span>
+            <span class="info-value" id="readingEffect" style="font-size: 11px;">📚 0 books</span>
+        </div>
         <div class="care-tips">
             <h3>💡 Care Tips</h3>
             <div id="careTipsText">
@@ -2074,6 +2084,8 @@
         let stolenTartCount = 0; // Tarts stolen by evil blob
         let booksRead = 0; // Total books read
         let readingCount = [0, 0, 0, 0]; // Times each book was read
+        let excessiveLoveCount = 0; // Times petted/played with when love already at 100
+        let contentmentFromReading = 0; // Contentment gained from reading books
 
         // Book elements
         const books = [
@@ -2107,6 +2119,8 @@
         const careTipsText = document.getElementById('careTipsText');
         const yellStatsEl = document.getElementById('yellStats');
         const booksReadEl = document.getElementById('booksRead');
+        const contentmentBar = document.getElementById('contentmentBar');
+        const readingEffectEl = document.getElementById('readingEffect');
 
         // Initialize blob info
         function initBlobInfo() {
@@ -2148,6 +2162,20 @@
             yellStatsEl.textContent = `${yellCount} (${justifiedYells} good)`;
             booksReadEl.textContent = booksRead;
 
+            // Update contentment bar (care score = contentment)
+            contentmentBar.style.width = `${careScore}%`;
+            contentmentBar.setAttribute('data-percent', `${Math.round(careScore)}%`);
+
+            // Update reading effect display
+            const contentLevel = Math.round(contentmentFromReading);
+            let readingStatus = `📚 ${contentLevel} books`;
+            if (contentLevel >= 5) {
+                readingStatus = '✨ Content!';
+            } else if (contentLevel >= 3) {
+                readingStatus = '😊 Calm';
+            }
+            readingEffectEl.textContent = readingStatus;
+
             // Show/hide yell button based on personality
             if (personality === 'evil' || indoorBallActive || stolenTartCount > 0) {
                 yellBtn.classList.add('visible');
@@ -2171,11 +2199,15 @@
             const loveRatio = love / 100;
             const hungerRatio = hunger / 100;
 
-            // Evil: too much love (over 85) while hunger is low
-            if (love > 85 && hunger > 50) {
+            // Contentment from reading prevents misbehavior
+            // High contentment (5+) stops stealing even if love is high
+            const isContentFromReading = contentmentFromReading >= 5;
+
+            // Evil: too much love (over 85) while hunger is low, BUT not if content from reading
+            if (love > 85 && hunger > 50 && !isContentFromReading) {
                 personality = 'evil';
                 careScore = Math.max(0, careScore - 0.5);
-                
+
                 // Evil blob spawns indoor ball occasionally
                 if (!indoorBallActive && Math.random() > 0.7) {
                     spawnIndoorBall();
@@ -2200,6 +2232,13 @@
             else {
                 personality = 'normal';
                 careScore = Math.max(40, Math.min(60, careScore));
+            }
+
+            // Excessive love when at 100 makes blob mischievous (even if content)
+            // This represents over-indulgence making them spoiled
+            if (excessiveLoveCount >= 8 && love >= 100) {
+                personality = 'evil';
+                careScore = Math.max(0, careScore - 1);
             }
 
             careScore = Math.max(0, Math.min(100, careScore));
@@ -2261,7 +2300,8 @@
             });
         }
 
-        // Read book
+        // Read book - increases contentment while keeping happiness up
+        // Content blob (5+ books) stops stealing and misbehaving
         function readBook(bookIndex) {
             const book = books[bookIndex];
             if (!book || book.classList.contains('reading')) return;
@@ -2295,25 +2335,38 @@
                 zzz.remove();
             }, 2000);
 
-            // Increase contentment based on books read
+            // Increase contentment from reading - this prevents misbehavior!
+            // After 5+ books, blob is too content to steal or be mischievous
+            contentmentFromReading = Math.min(20, contentmentFromReading + 1);
+            
+            // Also increase care score based on books read
             const contentmentBoost = Math.min(5, 1 + Math.floor(booksRead / 5));
             careScore = Math.min(100, careScore + contentmentBoost);
 
-            // Blob gets happy from reading
+            // Reading makes the blob content - sets a calm happy state
+            // This helps maintain happiness even when other stats decay
             setEmotion('happy');
             playSound('happy');
 
-            // Floating hearts
+            // Reading also slightly restores love (blob feels cared for)
+            love = Math.min(100, love + 3);
+
+            // Reading calms the blob - reduces excessive love counter
+            // Books help ground the blob and reduce spoiled behavior
+            excessiveLoveCount = Math.max(0, excessiveLoveCount - 2);
+
+            // Floating hearts and book emoji
             createFloatingHeart(blobRect.left + 50, blobRect.top - 40, '❤️');
             createFloatingHeart(blobRect.left + 50, blobRect.top - 60, bookEmojis[bookIndex]);
 
-            // Show feedback
+            // Show feedback on book
             createFloatingHeart(
                 book.getBoundingClientRect().left + 25,
                 book.getBoundingClientRect().top,
                 '✓'
             );
 
+            // Update display
             updatePersonalityDisplay();
             updateStats();
         }
@@ -3077,6 +3130,123 @@
         // Start physics loop
         updateBallPhysics();
 
+        // Spawn outdoor ball for mischievous blob - releases mischief!
+        function spawnOutdoorBallForMischief() {
+            if (toysOutside[0] || !isOutdoor) return;
+
+            // Create ball toy outside
+            const ball = document.createElement('div');
+            ball.className = 'toy-outside';
+            ball.innerHTML = `
+                <div class="ball-toy">
+                    <div class="ball-patch"></div>
+                    <div class="ball-patch"></div>
+                    <div class="ball-patch"></div>
+                </div>
+            `;
+            ball.style.left = `${Math.random() * (window.innerWidth - 100) + 50}px`;
+            ball.style.top = `${window.innerHeight - 200}px`;
+            document.body.appendChild(ball);
+            toysOutside[0] = ball;
+
+            // Initialize physics
+            toyPhysics[0] = { vy: 0, vx: 0, bouncing: false };
+
+            // Make draggable
+            makeDraggable(ball, 0);
+
+            // Click to play - releases mischief!
+            ball.addEventListener('click', (e) => {
+                e.stopPropagation();
+                playWithOutsideToyMischief(0);
+            });
+
+            // Show message
+            const msg = document.createElement('div');
+            msg.style.position = 'fixed';
+            msg.style.top = '50%';
+            msg.style.left = '50%';
+            msg.style.transform = 'translate(-50%, -50%)';
+            msg.style.background = 'rgba(255, 255, 255, 0.95)';
+            msg.style.padding = '20px 30px';
+            msg.style.borderRadius = '20px';
+            msg.style.boxShadow = '0 8px 32px rgba(180, 160, 200, 0.3)';
+            msg.style.fontSize = '16px';
+            msg.style.color = '#8b7d9b';
+            msg.style.zIndex = '1000';
+            msg.style.pointerEvents = 'none';
+            msg.textContent = '⚽ Play ball to release mischief!';
+            document.body.appendChild(msg);
+
+            setTimeout(() => msg.remove(), 2500);
+        }
+
+        // Play with outside toy - releases mischief for evil blob
+        function playWithOutsideToyMischief(toyIndex) {
+            const outsideToy = toysOutside[toyIndex];
+            if (!outsideToy) return;
+
+            // Bounce animation
+            outsideToy.classList.add('playing');
+            setTimeout(() => outsideToy.classList.remove('playing'), 500);
+
+            // Trigger ball physics
+            if (toyIndex === 0) {
+                toyPhysics[0].vy = -15;
+                toyPhysics[0].vx = (Math.random() - 0.5) * 20;
+                toyPhysics[0].bouncing = true;
+            }
+
+            // For mischievous blob - this RELEASES the mischief!
+            if (personality === 'evil' || excessiveLoveCount >= 5) {
+                setEmotion('excited');
+                playSound('happy');
+
+                const rect = outsideToy.getBoundingClientRect();
+
+                // Show mischief being released
+                createFloatingEmoji(rect.left + 25, rect.top, '😈➡️😊');
+                createFloatingEmoji(rect.left + 25, rect.top - 30, '⚽');
+
+                // Reduce excessive love significantly
+                excessiveLoveCount = Math.max(0, excessiveLoveCount - 3);
+
+                // If evil, convert to normal/perfect
+                if (personality === 'evil') {
+                    personality = 'perfect';
+                    careScore = Math.min(100, careScore + 10);
+                }
+
+                // Reduce stolen tart count
+                stolenTartCount = Math.max(0, stolenTartCount - 1);
+
+                // Remove indoor ball if exists
+                const indoorBall = document.querySelector('.indoor-ball');
+                if (indoorBall) {
+                    indoorBall.remove();
+                    indoorBallActive = false;
+                }
+
+                updatePersonalityDisplay();
+            }
+
+            // Set cooldown
+            toyCooldowns[toyIndex].classList.add('visible');
+            toyCooldowns[toyIndex].textContent = '10';
+
+            let remaining = 10;
+            const cooldownInterval = setInterval(() => {
+                remaining--;
+                toyCooldowns[toyIndex].textContent = remaining;
+                if (remaining <= 0) {
+                    clearInterval(cooldownInterval);
+                    toyCooldowns[toyIndex].classList.remove('visible');
+                }
+            }, 1000);
+
+            updateStats();
+        }
+
         // Take out system
         const takeoutBtn = document.getElementById('takeoutBtn');
         const cloud1 = document.getElementById('cloud1');
@@ -3134,6 +3304,13 @@
                     toysHint.style.display = 'block';
                     toysHint.textContent = 'Drag toys out to play!';
                 }
+
+                // If blob is misbehaving (evil/excessive love), spawn ball automatically
+                if (personality === 'evil' || excessiveLoveCount >= 5) {
+                    setTimeout(() => {
+                        spawnOutdoorBallForMischief();
+                    }, 1000);
+                }
             } else {
                 // Go inside
                 document.body.classList.remove('outdoor');
@@ -3166,6 +3343,16 @@
             // Decay stats
             hunger = Math.max(0, hunger - hungerDecayRate);
             love = Math.max(0, love - loveDecayRate);
+
+            // Decay excessive love count slowly (blob recovers from being spoiled)
+            if (excessiveLoveCount > 0) {
+                excessiveLoveCount = Math.max(0, excessiveLoveCount - 0.05);
+            }
+
+            // Decay contentment from reading very slowly (reading has lasting effect)
+            if (contentmentFromReading > 0) {
+                contentmentFromReading = Math.max(0, contentmentFromReading - 0.02);
+            }
 
             // Update bars
             hungerBar.style.width = `${hunger}%`;
@@ -3300,6 +3487,9 @@
         }
 
         function petBlob() {
+            // Check if love is already at max - this counts as excessive love
+            const wasAlreadyAtMax = love >= 100;
+
             // Personality-based rejection
             if (personality === 'evil') {
                 // Evil blob rejects love - plays hard to get
@@ -3307,6 +3497,10 @@
                 playSound('surprised');
                 createFloatingHeart(petBtn.getBoundingClientRect().left, petBtn.getBoundingClientRect().top, '💢');
                 rejectionCount++;
+                // Petting evil blob still counts as excessive if at max love
+                if (wasAlreadyAtMax) {
+                    excessiveLoveCount++;
+                }
                 return;
             }
 
@@ -3316,7 +3510,7 @@
                     setEmotion('sad');
                     createFloatingHeart(petBtn.getBoundingClientRect().left, petBtn.getBoundingClientRect().top, '💔');
                     playWhenSadCount++;
-                    
+
                     // After enough attempts, starts warming up
                     if (playWhenSadCount >= 3) {
                         setTimeout(() => {
@@ -3332,15 +3526,22 @@
             love = Math.min(100, love + lovePetAmount);
             loveGiven++;
 
-            // Visual feedback - multiple hearts
-            const petRect = petBtn.getBoundingClientRect();
-            for (let i = 0; i < 3; i++) {
-                setTimeout(() => {
-                    createFloatingHeart(
-                        petRect.left + Math.random() * 50,
-                        petRect.top + Math.random() * 30
-                    );
-                }, i * 150);
+            // If love was already at max, this is excessive love - makes blob spoiled
+            if (wasAlreadyAtMax) {
+                excessiveLoveCount++;
+                // Show a different feedback for excessive love
+                createFloatingHeart(petBtn.getBoundingClientRect().left, petBtn.getBoundingClientRect().top, '🥺');
+            } else {
+                // Visual feedback - multiple hearts
+                const petRect = petBtn.getBoundingClientRect();
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        createFloatingHeart(
+                            petRect.left + Math.random() * 50,
+                            petRect.top + Math.random() * 30
+                        );
+                    }, i * 150);
+                }
             }
 
             // Happy reaction
